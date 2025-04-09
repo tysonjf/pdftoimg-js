@@ -5,7 +5,7 @@ import { GetSrcOptions, base64ToBuffer, isBrowser, rangeToArr } from "./utils";
 import { DocumentInitParameters } from "pdfjs-dist/types/src/display/api";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.1.81/pdf.worker.min.js";
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/5.1.91/pdf.worker.min.js";
 
 type SrcType =
     | string
