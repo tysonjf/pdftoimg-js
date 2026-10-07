@@ -6,7 +6,12 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { build } from "esbuild";
 import { afterAll, describe, expect, it } from "vitest";
-import { decodePng, hasInk, installedPackageDir } from "./helpers";
+import {
+  decodePng,
+  hasInk,
+  installedOptionalDependencies,
+  installedPackageDir,
+} from "./helpers";
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,8 +33,14 @@ afterAll(async () => {
  * node.externalPackages, which Convex installs on the server instead.
  *
  * The fake server is a temp dir with the bundle in `code/` and the external
- * packages symlinked into `node_modules/` beside it. The bundle is then run
- * from the OS temp dir, so nothing may depend on process.cwd().
+ * packages symlinked into `node_modules/` beside it, each with the optional
+ * dependencies npm would install along with it (for @napi-rs/canvas, its
+ * prebuilt binary for this platform) unless the test places those itself.
+ * The bundle is then run from the OS temp dir, so nothing may depend on
+ * process.cwd(), and with --preserve-symlinks: Node otherwise follows each
+ * link to its real path under pnpm's store and resolves the package's own
+ * dependencies from there, so a package missing from the fake server would
+ * still be found.
  */
 async function bundleLikeConvex(
   externalPackages: string[],
@@ -58,17 +69,30 @@ async function bundleLikeConvex(
     logLevel: "silent",
   });
 
+  const link = async (name: string, dir: string) => {
+    const at = join(server, "node_modules", name);
+    await mkdir(dirname(at), { recursive: true });
+    await symlink(dir, at, "dir");
+  };
   for (const name of installOnServer) {
-    const link = join(server, "node_modules", name);
-    await mkdir(dirname(link), { recursive: true });
-    await symlink(installedPackageDir(name), link, "dir");
+    await link(name, installedPackageDir(name));
+    for (const dep of installedOptionalDependencies(name)) {
+      if (!externalPackages.includes(dep.name)) {
+        await link(dep.name, dep.dir);
+      }
+    }
   }
 
   return {
     server,
     async render(pdf: string, background?: string) {
       const out = join(server, "page.png");
-      const args = [join(outdir, "convex-action.js"), pdf, out];
+      const args = [
+        "--preserve-symlinks",
+        join(outdir, "convex-action.js"),
+        pdf,
+        out,
+      ];
       if (background) args.push(background);
       const { stdout, stderr } = await run(process.execPath, args, {
         cwd: tmpdir(),
@@ -132,5 +156,21 @@ describe("bundled the way Convex bundles a 'use node' action", () => {
     expect(failure).not.toBeNull();
     expect(failure!.stderr).toMatch(/needs @napi-rs\/canvas/);
     expect(failure!.stderr).toMatch(/externalPackages/);
+  });
+
+  it("finds the canvas only through the server, not through pnpm's store", async () => {
+    // An external pdfjs-dist with no canvas beside it. Its real directory
+    // under node_modules/.pnpm has a canvas next to it, so this passes only
+    // if the run resolves from the fake server alone.
+    const { render } = await bundleLikeConvex(
+      ["@napi-rs/canvas", "pdfjs-dist"],
+      { installOnServer: ["pdfjs-dist"] },
+    );
+    const failure = await render(helveticaPdf).then(
+      () => null,
+      (error: Error & { stderr?: string }) => error,
+    );
+    expect(failure).not.toBeNull();
+    expect(failure!.stderr).toMatch(/needs @napi-rs\/canvas/);
   });
 });

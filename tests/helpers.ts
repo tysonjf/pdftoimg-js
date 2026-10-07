@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 
 export const require = createRequire(import.meta.url);
 
@@ -62,4 +62,28 @@ export function hasInk(
 /** Real directory of an installed package, for symlinking into a fake server layout. */
 export function installedPackageDir(name: string): string {
   return dirname(require.resolve(`${name}/package.json`));
+}
+
+/**
+ * The optional dependencies of an installed package that are installed here,
+ * by name and real directory. For @napi-rs/canvas these are its prebuilt
+ * platform binaries, which npm installs beside it for the current platform.
+ */
+export function installedOptionalDependencies(
+  name: string,
+): { name: string; dir: string }[] {
+  const dir = installedPackageDir(name);
+  const fromPackage = createRequire(join(dir, "package.json"));
+  const manifest = fromPackage("./package.json") as {
+    optionalDependencies?: Record<string, string>;
+  };
+  return Object.keys(manifest.optionalDependencies ?? {}).flatMap((dep) => {
+    try {
+      return [
+        { name: dep, dir: dirname(fromPackage.resolve(`${dep}/package.json`)) },
+      ];
+    } catch {
+      return [];
+    }
+  });
 }

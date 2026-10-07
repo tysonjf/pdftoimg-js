@@ -8,10 +8,11 @@ import { pdfToImg } from "../../src/index";
 const [pdfPath, outPath, background] = process.argv.slice(2);
 
 const bytes = new Uint8Array(await readFile(pdfPath));
-const dataUrl = await pdfToImg(bytes, {
+const image = await pdfToImg(bytes, {
   pages: "firstPage",
   scale: 1,
   background: background || undefined,
+  returnType: "bytes",
 });
-await writeFile(outPath, Buffer.from(dataUrl.split(",")[1], "base64"));
+await writeFile(outPath, image.bytes);
 console.log(JSON.stringify({ ok: true, cwd: process.cwd() }));

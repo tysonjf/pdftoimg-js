@@ -11,9 +11,9 @@ import { Options, PageImage, PdfSrc, ReturnType } from "./types";
 import {
   defaultOptions,
   getPagesArray,
-  isTypedArrayStrict,
   mimeFor,
   returnsSinglePage,
+  toDocumentSource,
 } from "./utils";
 
 export { pdfjsDistDir } from "./pdfjs-node";
@@ -44,6 +44,7 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
 
   const pdfDoc = await pdfDocLoading.promise;
 
+  const encoding: Promise<PageImage>[] = [];
   try {
     const pageNums: number[] = getPagesArray(
       requiredOpt.pages,
@@ -56,10 +57,14 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     // 3.1 s sequential). Encoding is the part that does run in parallel:
     // @napi-rs/canvas encodes on a libuv thread, so each page's encode is
     // started as soon as it is drawn and collected at the end.
-    const encoding: Promise<PageImage>[] = [];
     for (const pageNum of pageNums) {
       const rendered = await renderPage(pdfDoc, pageNum, requiredOpt);
-      encoding.push(encodePage(pdfDoc, rendered, pageNum, requiredOpt));
+      const encoded = encodePage(pdfDoc, rendered, pageNum, requiredOpt);
+      // The next page renders before anything awaits this one. Without a
+      // handler attached now, a failed encode counts as an unhandled
+      // rejection and Node's default mode exits the process over it.
+      encoded.catch(() => {});
+      encoding.push(encoded);
     }
     const images = await Promise.all(encoding);
 
@@ -67,32 +72,13 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
       requiredOpt.returnType === "bytes" ? images : images.map(toDataUrl);
     return returnsSinglePage(requiredOpt.pages) ? results[0] : results;
   } finally {
+    // Let encodes still running (a later page failed to render, or another
+    // encode failed) finish before the document goes away under them.
+    await Promise.allSettled(encoding);
     // A long-lived process (a serverless function instance, for one) would
     // otherwise keep every document it ever rendered.
     await pdfDoc.destroy();
   }
-}
-
-/**
- * pdf.js wants `data` as a plain Uint8Array (it refuses a Node Buffer) and
- * takes ownership of it: the bytes are transferred to its worker, which
- * detaches the caller's buffer even with the fake worker Node uses. Copying
- * keeps the caller's input usable, for a second render or anything else.
- */
-function toDocumentSource(
-  src: PdfSrc,
-): { data: Uint8Array } | { url: string | URL } {
-  if (src instanceof ArrayBuffer) {
-    return { data: new Uint8Array(src.slice(0)) };
-  }
-  if (isTypedArrayStrict(src)) {
-    return {
-      data: new Uint8Array(
-        src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength),
-      ),
-    };
-  }
-  return { url: src };
 }
 
 /** The slice of pdf.js's Node canvas factory (@napi-rs/canvas underneath) this file uses. */
@@ -137,6 +123,15 @@ async function renderPage(
     const safeScale = Math.min(widthScale, heightScale, 1);
     scale = scale * safeScale;
     viewport = page.getViewport({ scale });
+  }
+
+  // pdf.js's factory refuses an empty canvas with "Invalid canvas size", and
+  // @napi-rs/canvas truncates a fractional size, so check before asking.
+  if (!(viewport.width >= 1 && viewport.height >= 1)) {
+    throw new Error(
+      `Page ${pageNum} would render at ${viewport.width}x${viewport.height} px ` +
+        `(scale ${scale}). The scale must give the page at least 1x1 px.`,
+    );
   }
 
   // pdf.js's own Node canvas factory, backed by @napi-rs/canvas.

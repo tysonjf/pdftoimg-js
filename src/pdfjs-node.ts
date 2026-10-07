@@ -27,8 +27,11 @@ export function loadPdfjs(): Promise<PdfjsLib> {
     ([lib]) => lib,
     (error) => {
       pdfjs = undefined;
-      // Without @napi-rs/canvas, pdf.js 5 cannot polyfill DOMMatrix and its
-      // own module evaluation fails with a bare ReferenceError.
+      // pdf.js 5.4 only warns here when @napi-rs/canvas is missing ("Cannot
+      // polyfill `DOMMatrix`"); the missing canvas surfaces later, from the
+      // canvas factory in renderPage. This is a safety net for anything else
+      // that stops pdf.js or its worker from evaluating, such as a pdf.js
+      // that touches DOMMatrix at import time.
       throw describeCanvasFailure(error);
     },
   );
@@ -105,20 +108,41 @@ const CANVAS_PACKAGE = "@napi-rs/canvas";
 
 /**
  * pdf.js draws through @napi-rs/canvas in Node and loads it with a plain
- * `require`. When that fails the raw error ("DOMMatrix is not defined",
- * "Cannot find module '@napi-rs/canvas'") says nothing about what to do, so
- * say it here.
+ * `require`. When that fails the raw error ("Cannot find module
+ * '@napi-rs/canvas'", "DOMMatrix is not defined") says nothing about what to
+ * do, so say it here. Any other error, pdf.js's own "Invalid canvas size"
+ * included, is passed through untouched.
  */
 export function describeCanvasFailure(error: unknown): Error {
-  const message = error instanceof Error ? error.message : String(error);
-  if (!/canvas|DOMMatrix|ImageData|Path2D/i.test(message)) {
-    return error instanceof Error ? error : new Error(message);
+  if (!(error instanceof Error)) {
+    return new Error(String(error));
   }
+  if (!isMissingCanvas(error)) {
+    return error;
+  }
+  const { message } = error;
   return new Error(
     `pdftoimg-js could not create a canvas: ${message}\n` +
       `Rendering in Node needs ${CANVAS_PACKAGE} (a prebuilt native module). ` +
       `Install it in your project, and if your code is bundled keep it out of the bundle ` +
       `and installed on the server. On Convex that means listing it in convex.json ` +
       `under node.externalPackages.`,
+  );
+}
+
+function isMissingCanvas(error: Error): boolean {
+  const { code } = error as NodeJS.ErrnoException;
+  if (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") {
+    return error.message.includes(CANVAS_PACKAGE);
+  }
+  // @napi-rs/canvas is installed but its prebuilt binary for this platform
+  // is not (an optional dependency the install skipped).
+  if (/(Cannot find|Failed to load) native binding/.test(error.message)) {
+    return true;
+  }
+  // The DOM classes pdf.js polyfills from the canvas package.
+  return (
+    error instanceof ReferenceError &&
+    /\b(DOMMatrix|ImageData|Path2D) is not defined/.test(error.message)
   );
 }

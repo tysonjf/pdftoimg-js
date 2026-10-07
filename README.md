@@ -1,6 +1,6 @@
 > **Version 2 Has Arrived! 🎉**  
 > This release is still in beta, so we welcome your feedback and feature requests.  
-> If you encounter any bugs, please report them by opening an issue on our [GitHub repository](https://github.com/iqbal-rashed/pdftoimg-js/issues).
+> If you encounter any bugs, please report them by opening an issue on our [GitHub repository](https://github.com/tysonjf/pdftoimg-js/issues).
 
 # PDFtoIMG-JS
 
@@ -102,7 +102,7 @@ Convert PDF(s) to images.
 interface Options {
   imgType?: "png" | "jpg"; // Default: "png"
   returnType?: "base64" | "bytes"; // Default: "base64" (a data URL)
-  scale?: number; // Default: 1.5
+  scale?: number; // Default: 1
   background?: string | CanvasGradient | CanvasPattern; // Default: "rgb(255,255,255)"
   intent?: "display" | "print" | "any"; // Default: "display"
   pages?: PagesType; // "all" | "firstPage" | "lastPage" | number | number[] | { startPage, endPage }
@@ -122,7 +122,12 @@ interface Options {
   ```ts
   pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
   ```
-- Returns **base64 DataURL** for each page.
+  Setting `workerSrc` yourself, to a `pdf.worker.min.mjs` you serve from the
+  same `pdfjs-dist` version, is the reliable path. The cdnjs default works only
+  if cdnjs carries that exact version, and when it does not, the failure shows
+  up at runtime in the browser.
+- Returns a **base64 data URL** for each page, or a `PageImage` with
+  `returnType: "bytes"` (encoded through `canvas.toBlob`).
 
 ### Transparent background
 
@@ -194,13 +199,15 @@ export const rasterise = action({
   handler: async (ctx, { storageId }) => {
     const blob = await ctx.storage.get(storageId);
     if (!blob) throw new Error("PDF not found");
-    const dataUrl = await pdfToImg(await blob.arrayBuffer(), {
+    const image = await pdfToImg(await blob.arrayBuffer(), {
       pages: "firstPage",
       scale: 2,
       background: "rgba(0,0,0,0)",
+      returnType: "bytes",
     });
-    const png = Buffer.from(dataUrl.split(",")[1], "base64");
-    return await ctx.storage.store(new Blob([png], { type: "image/png" }));
+    return await ctx.storage.store(
+      new Blob([image.bytes], { type: image.mime }),
+    );
   },
 });
 ```
@@ -213,7 +220,8 @@ Any other bundler that targets Node needs the same two things: keep
 `@napi-rs/canvas` external (it is a `.node` binary) and either keep `pdfjs-dist`
 external or accept that non-embedded fonts fall back. `tests/convex-bundle.test.ts`
 builds the package with esbuild using Convex's own options and runs the result
-from an unrelated working directory, in both configurations.
+from an unrelated working directory, with only the packages placed beside the
+bundle to resolve from, in both configurations.
 
 ## 👡 CLI Usage (Node.js Only)
 
@@ -230,7 +238,7 @@ pdftoimg -i <input> [-o <output>] [-t <imgType>] [-s <scale>] [-p <pages>] [-n <
 | `-i, --input`                   | `string`  | (Required) Input PDF path.                                                 |
 | `-o, --out`                     | `string`  | Output directory (default: current directory).                             |
 | `-t, --imgType`                 | `string`  | `png` or `jpg` (default: png).                                             |
-| `-s, --scale`                   | `number`  | Scale factor (default: 1.5).                                               |
+| `-s, --scale`                   | `number`  | Scale factor (default: 1).                                                 |
 | `-b, --background`              | `string`  | Background color (e.g., 'white', 'rgba(255,255,255,0.5)', '#ffffff').      |
 | `-in, --intent`                 | `string`  | Rendering intent: 'display', 'print', or 'any' (default: 'display').       |
 | `-p, --pages`                   | `string`  | `"all"`, `"firstPage"`, `"lastPage"`, page numbers, or ranges like `1..3`. |
@@ -286,4 +294,4 @@ pdftoimg -i ./example.pdf -sb true
 
 ## Contribution
 
-Contributions are welcome! Feel free to check out the [Contributing Guide](https://github.com/iqbal-rashed/pdftoimg-js/blob/main/.github/contributing.md) before making a pull request.
+Contributions are welcome! Feel free to check out the [Contributing Guide](https://github.com/tysonjf/pdftoimg-js/blob/main/.github/contributing.md) before making a pull request.

@@ -3,9 +3,9 @@ import { Options, PageImage, PdfSrc, ReturnType } from "./types";
 import {
   defaultOptions,
   getPagesArray,
-  isTypedArrayStrict,
   mimeFor,
   returnsSinglePage,
+  toDocumentSource,
 } from "./utils";
 
 export type { PageImage } from "./types";
@@ -47,24 +47,6 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
   );
 
   return returnsSinglePage(requiredOpt.pages) ? images[0] : images;
-}
-
-// pdf.js transfers `data` to its worker and detaches the caller's buffer, so
-// the bytes are copied first and the input stays usable.
-function toDocumentSource(
-  src: PdfSrc,
-): { data: Uint8Array } | { url: string | URL } {
-  if (src instanceof ArrayBuffer) {
-    return { data: new Uint8Array(src.slice(0)) };
-  }
-  if (isTypedArrayStrict(src)) {
-    return {
-      data: new Uint8Array(
-        src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength),
-      ),
-    };
-  }
-  return { url: src };
 }
 
 async function pageToImg(

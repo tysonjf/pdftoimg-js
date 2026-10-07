@@ -15,6 +15,7 @@ function captureConsole() {
     );
 }
 import { pdfToImg, pdfjsDistDir } from "../src/index";
+import { describeCanvasFailure } from "../src/pdfjs-node";
 import { dataUrlToPng, decodePng, hasInk } from "./helpers";
 
 const fixture = (name: string) =>
@@ -182,6 +183,47 @@ describe("pdfToImg in Node", () => {
     }
   });
 
+  it("rejects, instead of crashing the process, when a page fails to encode", async () => {
+    const { createCanvas } = await import("@napi-rs/canvas");
+    type Made = { canvas: ReturnType<typeof createCanvas> };
+    // pdf.js's canvas factory contract, with canvases whose encode fails at
+    // once: page 1's encode rejects while page 2 is still rendering.
+    class FailingEncodeFactory {
+      create(width: number, height: number) {
+        const canvas = createCanvas(width, height);
+        (canvas as { encode: unknown }).encode = () =>
+          Promise.reject(new Error("encode failed"));
+        return { canvas, context: canvas.getContext("2d") };
+      }
+      reset({ canvas }: Made, width: number, height: number) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+      destroy({ canvas }: Made) {
+        canvas.width = 0;
+        canvas.height = 0;
+      }
+    }
+    await expect(
+      pdfToImg(new Uint8Array(await readFile(examplePdf)), {
+        pages: [1, 2, 3],
+        scale: 0.25,
+        returnType: "bytes",
+        documentOptions: { CanvasFactory: FailingEncodeFactory },
+      }),
+    ).rejects.toThrow("encode failed");
+  });
+
+  it("says the scale is too small, rather than blaming the canvas, for scale 0", async () => {
+    const error = await pdfToImg(
+      new Uint8Array(await readFile(fixture("helvetica.pdf"))),
+      { pages: 1, scale: 0 },
+    ).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/at least 1x1 px/);
+    expect((error as Error).message).not.toMatch(/napi-rs/);
+  });
+
   it("returns one image per page for 'all' and a single image for a page number", async () => {
     const bytes = new Uint8Array(await readFile(fixture("helvetica.pdf")));
     const all = await pdfToImg(bytes, { pages: "all", scale: 0.5 });
@@ -189,5 +231,42 @@ describe("pdfToImg in Node", () => {
     expect(Array.isArray(all)).toBe(true);
     expect(all).toHaveLength(1);
     expect(one).toBe(all[0]);
+  });
+});
+
+describe("describeCanvasFailure", () => {
+  const missingModule = Object.assign(
+    new Error("Cannot find module '@napi-rs/canvas'\nRequire stack: ..."),
+    { code: "MODULE_NOT_FOUND" },
+  );
+  const otherModule = Object.assign(
+    new Error("Cannot find module 'left-pad'"),
+    {
+      code: "MODULE_NOT_FOUND",
+    },
+  );
+
+  it.each([
+    ["a missing @napi-rs/canvas", missingModule],
+    ["a missing platform binary", new Error("Cannot find native binding.")],
+    [
+      "an unpolyfilled DOMMatrix",
+      new ReferenceError("DOMMatrix is not defined"),
+    ],
+  ])("explains %s", (_, error) => {
+    expect(describeCanvasFailure(error).message).toMatch(
+      /needs @napi-rs\/canvas[\s\S]*externalPackages/,
+    );
+  });
+
+  it.each([
+    ["pdf.js's empty-canvas check", new Error("Invalid canvas size")],
+    ["some other missing module", otherModule],
+    [
+      "an unrelated ReferenceError",
+      new ReferenceError("canvas is not defined"),
+    ],
+  ])("passes %s through untouched", (_, error) => {
+    expect(describeCanvasFailure(error)).toBe(error);
   });
 });
