@@ -6,6 +6,7 @@ import {
   mimeFor,
   returnsSinglePage,
   toDocumentSource,
+  workerSrcFor,
 } from "./utils";
 
 export type { PageImage } from "./types";
@@ -25,11 +26,15 @@ export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
 export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  // The worker must match the pdf.js version exactly. Leave it alone when the
-  // host app already pointed pdf.js at its own copy.
-  pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-
   const requiredOpt: Required<Options> = { ...defaultOptions, ...opt };
+
+  // The worker must match the pdf.js version exactly, which the copy this
+  // package ships as "pdftoimg-js/worker" always does.
+  pdfjsLib.GlobalWorkerOptions.workerSrc = workerSrcFor(
+    requiredOpt.workerSrc,
+    pdfjsLib.GlobalWorkerOptions.workerSrc,
+    pdfjsLib.version,
+  );
 
   const pdfDocLoading = pdfjsLib.getDocument({
     ...toDocumentSource(src),
