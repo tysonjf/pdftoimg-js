@@ -28,6 +28,12 @@ with [`@napi-rs/canvas`](https://github.com/Brooooooklyn/canvas), a prebuilt
 native canvas that needs no system libraries; it is an optional dependency of
 both this package and `pdfjs-dist`, so a normal install brings it along.
 
+In Node, pages are rasterised one after another and encoded in parallel. pdf.js
+has no real worker there, so rendering pages concurrently only interleaves them
+and raises peak memory (14 A4 pages: 3.8 s concurrent, 3.1 s sequential), while
+`@napi-rs/canvas` encodes PNG and JPEG on a separate thread, so each page's
+encode starts as soon as it is drawn.
+
 ## 🛠 Basic Usage
 
 #### 🚀 Example (Node.js Script)
@@ -85,12 +91,17 @@ Convert PDF(s) to images.
 
 - If `pages` is a single page (`firstPage`, `lastPage`, or a number) ➔ Single image.
 - Otherwise ➔ Array of images.
+- Each image is a base64 data URL, or with `returnType: "bytes"` a `PageImage`:
+  `{ pageNumber, width, height, mime, bytes }` with the encoded PNG or JPEG as a
+  `Uint8Array`. Use it when the image goes to a file or a store; it skips the
+  base64 round trip and tells you the pixel size without decoding.
 
 ### Options (`Options` Interface)
 
 ```ts
 interface Options {
   imgType?: "png" | "jpg"; // Default: "png"
+  returnType?: "base64" | "bytes"; // Default: "base64" (a data URL)
   scale?: number; // Default: 1.5
   background?: string | CanvasGradient | CanvasPattern; // Default: "rgb(255,255,255)"
   intent?: "display" | "print" | "any"; // Default: "display"

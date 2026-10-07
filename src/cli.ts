@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { pdfToImg } from ".";
 import { program, validatePrompts } from "./prompts";
-import { getPagesArray } from "./utils";
+import type { PageImage } from "./types";
 
 program.parse(process.argv);
 
@@ -14,6 +14,7 @@ async function init() {
 
     const images = await pdfToImg(opts.inputPath, {
       imgType: opts.imgType,
+      returnType: "bytes",
       scale: opts.scale,
       pages: opts.pages,
       intent: opts.intent as "display" | "print" | "any",
@@ -26,29 +27,18 @@ async function init() {
       scaleForBrowserSupport: opts.scaleForBrowserSupport,
     });
 
-    const pagesArray = getPagesArray(opts.pages, images.length);
+    // A single-page selection ("firstPage", "lastPage", a number) comes back
+    // as one image, not a list.
+    const list: PageImage[] = Array.isArray(images) ? images : [images];
 
-    const saveImage = async (
-      img: Buffer | string,
-      pageNumber: number,
-      index: number,
-    ) => {
+    list.forEach((img, index) => {
       const fileName = opts.nameTemplate
         .replace(/{i}/g, (index + 1).toString())
-        .replace(/{p}/g, pageNumber.toString())
+        .replace(/{p}/g, img.pageNumber.toString())
         .replace(/{ext}/g, opts.imgType);
       const filePath = path.join(opts.outputPath, fileName);
-      const data =
-        typeof img === "string"
-          ? Buffer.from(img.split(",")[1], "base64")
-          : img;
-      fs.writeFileSync(filePath, data);
+      fs.writeFileSync(filePath, img.bytes);
       console.log(`Saved: ${filePath}`);
-    };
-
-    pagesArray.forEach((p, i) => {
-      const str = images[i];
-      saveImage(str, p, i);
     });
   } catch (error: any) {
     console.error(error.message);

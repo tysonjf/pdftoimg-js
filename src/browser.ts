@@ -1,6 +1,14 @@
 import { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
-import { Options, PdfSrc, ReturnType } from "./types";
-import { defaultOptions, getPagesArray, isTypedArrayStrict } from "./utils";
+import { Options, PageImage, PdfSrc, ReturnType } from "./types";
+import {
+  defaultOptions,
+  getPagesArray,
+  isTypedArrayStrict,
+  mimeFor,
+  returnsSinglePage,
+} from "./utils";
+
+export type { PageImage } from "./types";
 
 export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
   src: S,
@@ -38,11 +46,7 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
   );
 
-  return requiredOpt.pages === "firstPage" ||
-    requiredOpt.pages === "lastPage" ||
-    typeof requiredOpt.pages === "number"
-    ? images[0]
-    : images;
+  return returnsSinglePage(requiredOpt.pages) ? images[0] : images;
 }
 
 // pdf.js transfers `data` to its worker and detaches the caller's buffer, so
@@ -67,7 +71,7 @@ async function pageToImg(
   pdfDoc: PDFDocumentProxy,
   pageNum: number,
   opt: Required<Options>,
-): Promise<string> {
+): Promise<string | PageImage> {
   const page = await pdfDoc.getPage(pageNum);
   let scale = opt.scale;
   let viewport = page.getViewport({ scale });
@@ -102,8 +106,21 @@ async function pageToImg(
 
   await renderTask.promise;
 
-  const mime = opt.imgType === "jpg" ? "image/jpeg" : "image/png";
-  const dataUrl = canvas.toDataURL(mime);
-
-  return dataUrl;
+  const mime = mimeFor(opt.imgType);
+  if (opt.returnType === "bytes") {
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, mime),
+    );
+    if (!blob) {
+      throw new Error(`canvas.toBlob produced nothing for page ${pageNum}`);
+    }
+    return {
+      pageNumber: pageNum,
+      width: canvas.width,
+      height: canvas.height,
+      mime,
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+    };
+  }
+  return canvas.toDataURL(mime);
 }

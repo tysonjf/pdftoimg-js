@@ -133,6 +133,55 @@ describe("pdfToImg in Node", () => {
     expect(px.at(CORNER.x, CORNER.y)[3]).toBe(0);
   });
 
+  it("returns bytes with the pixel size and page number when asked", async () => {
+    const bytes = new Uint8Array(await readFile(fixture("helvetica.pdf")));
+    const [image, dataUrl] = await Promise.all([
+      pdfToImg(bytes, { pages: 1, returnType: "bytes" }),
+      pdfToImg(bytes, { pages: 1 }),
+    ]);
+    expect(image.pageNumber).toBe(1);
+    expect([image.width, image.height]).toEqual([200, 100]);
+    expect(image.mime).toBe("image/png");
+    // PNG signature, and a plain Uint8Array rather than a Node Buffer.
+    expect(Array.from(image.bytes.slice(0, 4))).toEqual([
+      0x89, 0x50, 0x4e, 0x47,
+    ]);
+    expect(Buffer.isBuffer(image.bytes)).toBe(false);
+    // Same pixels as the data URL path.
+    const fromBytes = await decodePng(Buffer.from(image.bytes));
+    const fromDataUrl = await decodePng(dataUrlToPng(dataUrl));
+    expect(fromBytes.at(SQUARE.x, SQUARE.y)).toEqual(
+      fromDataUrl.at(SQUARE.x, SQUARE.y),
+    );
+    expect(fromBytes.at(CORNER.x, CORNER.y)).toEqual([255, 255, 255, 255]);
+  });
+
+  it("encodes JPEG bytes when imgType is jpg", async () => {
+    const image = await pdfToImg(
+      new Uint8Array(await readFile(fixture("helvetica.pdf"))),
+      {
+        pages: 1,
+        imgType: "jpg",
+        returnType: "bytes",
+      },
+    );
+    expect(image.mime).toBe("image/jpeg");
+    expect(Array.from(image.bytes.slice(0, 2))).toEqual([0xff, 0xd8]);
+  });
+
+  it("keeps page order and page numbers for a page list", async () => {
+    const images = await pdfToImg(new Uint8Array(await readFile(examplePdf)), {
+      pages: [3, 1],
+      scale: 0.25,
+      returnType: "bytes",
+    });
+    expect(images.map((i) => i.pageNumber)).toEqual([3, 1]);
+    for (const image of images) {
+      expect(image.width).toBeGreaterThan(0);
+      expect(image.bytes.length).toBeGreaterThan(0);
+    }
+  });
+
   it("returns one image per page for 'all' and a single image for a page number", async () => {
     const bytes = new Uint8Array(await readFile(fixture("helvetica.pdf")));
     const all = await pdfToImg(bytes, { pages: "all", scale: 0.5 });

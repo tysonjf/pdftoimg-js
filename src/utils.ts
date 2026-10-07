@@ -1,7 +1,8 @@
-import { Options, PagesType } from "./types";
+import { Options, PageImage, PagesType } from "./types";
 
 export const defaultOptions: Required<Options> = {
   imgType: "png",
+  returnType: "base64",
   pages: "all",
   scale: 1.0,
   background: "rgb(255,255,255)",
@@ -17,6 +18,17 @@ export const rangeToArr = (start: number, end?: number): number[] => {
   const to = end !== undefined ? end : start;
   return Array.from({ length: to - from + 1 }, (_, i) => from + i);
 };
+
+/** A single page selection returns one image rather than a list. */
+export function returnsSinglePage(pages: PagesType): boolean {
+  return (
+    pages === "firstPage" || pages === "lastPage" || typeof pages === "number"
+  );
+}
+
+export function mimeFor(imgType: Options["imgType"]): PageImage["mime"] {
+  return imgType === "jpg" ? "image/jpeg" : "image/png";
+}
 
 export function getPagesArray(pages: PagesType, numPages: number) {
   return pages === "firstPage"

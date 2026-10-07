@@ -13,11 +13,32 @@ export type PagesType =
   | number
   | number[];
 
+/**
+ * One rendered page, when `returnType` is "bytes".
+ */
+export interface PageImage {
+  /** 1-based page number in the source document. */
+  pageNumber: number;
+  /** Pixel size of the image. */
+  width: number;
+  height: number;
+  mime: "image/png" | "image/jpeg";
+  /** The encoded image. */
+  bytes: Uint8Array;
+}
+
 export interface Options {
   /**
    * The type of image to output. Can be 'png' or 'jpg'. The default value is 'png'.
    */
   imgType?: "png" | "jpg";
+  /**
+   * What each page comes back as. "base64" is a data URL string; "bytes" is a
+   * `PageImage` with the encoded bytes, the pixel size and the page number, and
+   * saves the base64 round trip when the image is going to a file or a store.
+   * The default value is "base64".
+   */
+  returnType?: "base64" | "bytes";
   /**
    * The scale of the rendered image. The default value is 1.
    */
@@ -72,10 +93,14 @@ export interface Options {
   scaleForBrowserSupport?: boolean;
 }
 
+type PageResult<O extends Options> = O["returnType"] extends "bytes"
+  ? PageImage
+  : string;
+
 type PerSrcReturn<O extends Options> = O["pages"] extends
   number | "firstPage" | "lastPage"
-  ? string
-  : string[];
+  ? PageResult<O>
+  : PageResult<O>[];
 
 export type PdfSrc = string | URL | TypedArray | ArrayBuffer;
 
