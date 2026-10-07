@@ -17,18 +17,14 @@ export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
 export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  const ua = navigator.userAgent;
-  const isChrome =
-    ua.includes("chrome") || ua.includes("Chromium") || ua.includes("Chrome");
-
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
+  // The worker must match the pdf.js version exactly. Leave it alone when the
+  // host app already pointed pdf.js at its own copy.
+  pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
   const requiredOpt: Required<Options> = { ...defaultOptions, ...opt };
 
   const pdfDocLoading = pdfjsLib.getDocument({
-    ...(isTypedArrayStrict(src) ? { data: src } : { url: src }),
-    isChrome,
+    ...toDocumentSource(src),
     ...requiredOpt.documentOptions,
   });
 
@@ -49,11 +45,29 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     : images;
 }
 
+// pdf.js transfers `data` to its worker and detaches the caller's buffer, so
+// the bytes are copied first and the input stays usable.
+function toDocumentSource(
+  src: PdfSrc,
+): { data: Uint8Array } | { url: string | URL } {
+  if (src instanceof ArrayBuffer) {
+    return { data: new Uint8Array(src.slice(0)) };
+  }
+  if (isTypedArrayStrict(src)) {
+    return {
+      data: new Uint8Array(
+        src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength),
+      ),
+    };
+  }
+  return { url: src };
+}
+
 async function pageToImg(
   pdfDoc: PDFDocumentProxy,
   pageNum: number,
   opt: Required<Options>,
-): Promise<string | Buffer> {
+): Promise<string> {
   const page = await pdfDoc.getPage(pageNum);
   let scale = opt.scale;
   let viewport = page.getViewport({ scale });
@@ -76,7 +90,10 @@ async function pageToImg(
   canvas.height = viewport.height;
   canvas.width = viewport.width;
 
+  // `canvas: null` makes pdf.js 5 draw into this context as given instead of
+  // opening its own opaque one, so a transparent `background` survives.
   const renderTask = page.render({
+    canvas: null,
     canvasContext,
     viewport,
     intent: opt.intent || "display",

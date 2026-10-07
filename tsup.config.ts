@@ -4,6 +4,7 @@ export default defineConfig([
   {
     entry: ["src/index.ts"],
     format: ["cjs", "esm"],
+    platform: "node",
     dts: true,
     splitting: false,
     clean: true,
@@ -13,6 +14,7 @@ export default defineConfig([
   {
     entry: ["src/cli.ts"],
     format: ["cjs"],
+    platform: "node",
     splitting: false,
     clean: true,
     minify: true,
@@ -21,6 +23,7 @@ export default defineConfig([
   {
     entry: ["src/browser.ts"],
     format: ["cjs", "esm"],
+    platform: "browser",
     splitting: false,
     dts: true,
     clean: true,

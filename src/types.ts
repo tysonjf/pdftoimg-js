@@ -73,13 +73,11 @@ export interface Options {
 }
 
 type PerSrcReturn<O extends Options> = O["pages"] extends
-  | number
-  | "firstPage"
-  | "lastPage"
+  number | "firstPage" | "lastPage"
   ? string
   : string[];
 
-export type PdfSrc = string | URL | TypedArray;
+export type PdfSrc = string | URL | TypedArray | ArrayBuffer;
 
 export type ReturnType<
   O extends Options,

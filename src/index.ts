@@ -1,7 +1,13 @@
-import { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
-import { CMAP_URL, STANDARD_FONT_DATA_URL } from "./constant";
+import type { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
+import {
+  describeCanvasFailure,
+  loadPdfjs,
+  pdfjsAssetParams,
+} from "./pdfjs-node";
 import { Options, PdfSrc, ReturnType } from "./types";
 import { defaultOptions, getPagesArray, isTypedArrayStrict } from "./utils";
+
+export { pdfjsDistDir } from "./pdfjs-node";
 
 export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
   src: S,
@@ -16,42 +22,77 @@ export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
 }
 
 export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const pdfjsLib = await loadPdfjs();
 
   const requiredOpt: Required<Options> = { ...defaultOptions, ...opt };
 
   const pdfDocLoading = pdfjsLib.getDocument({
-    standardFontDataUrl: STANDARD_FONT_DATA_URL,
-    cMapUrl: CMAP_URL,
-    cMapPacked: true,
-    ...(isTypedArrayStrict(src)
-      ? { data: Buffer.isBuffer(src) ? new Uint8Array(src) : src }
-      : { url: src }),
+    ...pdfjsAssetParams(),
+    ...toDocumentSource(src),
     ...requiredOpt.documentOptions,
   });
 
   const pdfDoc = await pdfDocLoading.promise;
 
-  const numPages = pdfDoc.numPages;
+  try {
+    const numPages = pdfDoc.numPages;
 
-  const pageNums: number[] = getPagesArray(requiredOpt.pages, numPages);
+    const pageNums: number[] = getPagesArray(requiredOpt.pages, numPages);
 
-  const images = await Promise.all(
-    pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
-  );
+    const images = await Promise.all(
+      pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
+    );
 
-  return requiredOpt.pages === "firstPage" ||
-    requiredOpt.pages === "lastPage" ||
-    typeof requiredOpt.pages === "number"
-    ? images[0]
-    : images;
+    return requiredOpt.pages === "firstPage" ||
+      requiredOpt.pages === "lastPage" ||
+      typeof requiredOpt.pages === "number"
+      ? images[0]
+      : images;
+  } finally {
+    // A long-lived process (a serverless function instance, for one) would
+    // otherwise keep every document it ever rendered.
+    await pdfDoc.destroy();
+  }
+}
+
+/**
+ * pdf.js wants `data` as a plain Uint8Array (it refuses a Node Buffer) and
+ * takes ownership of it: the bytes are transferred to its worker, which
+ * detaches the caller's buffer even with the fake worker Node uses. Copying
+ * keeps the caller's input usable, for a second render or anything else.
+ */
+function toDocumentSource(
+  src: PdfSrc,
+): { data: Uint8Array } | { url: string | URL } {
+  if (src instanceof ArrayBuffer) {
+    return { data: new Uint8Array(src.slice(0)) };
+  }
+  if (isTypedArrayStrict(src)) {
+    return {
+      data: new Uint8Array(
+        src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength),
+      ),
+    };
+  }
+  return { url: src };
+}
+
+interface NodeCanvasFactory {
+  create(
+    width: number,
+    height: number,
+  ): { canvas: NodeCanvas; context: unknown };
+}
+
+interface NodeCanvas {
+  toDataURL(mime: string): string;
 }
 
 async function pageToImg(
   pdfDoc: PDFDocumentProxy,
   pageNum: number,
   opt: Required<Options>,
-): Promise<string | Buffer> {
+): Promise<string> {
   const page = await pdfDoc.getPage(pageNum);
   let scale = opt.scale;
   let viewport = page.getViewport({ scale });
@@ -67,23 +108,31 @@ async function pageToImg(
     viewport = page.getViewport({ scale });
   }
 
-  const canvasFactory: any = pdfDoc.canvasFactory;
-  const { canvas, context } = canvasFactory.create(
-    viewport.width,
-    viewport.height,
-  );
+  // pdf.js's own Node canvas factory, backed by @napi-rs/canvas.
+  const canvasFactory = pdfDoc.canvasFactory as NodeCanvasFactory;
+  let created: { canvas: NodeCanvas; context: unknown };
+  try {
+    created = canvasFactory.create(viewport.width, viewport.height);
+  } catch (error) {
+    throw describeCanvasFailure(error);
+  }
+  const { canvas, context } = created;
 
+  // `canvas: null` tells pdf.js 5 to draw into the context as given. With a
+  // canvas (passed, or taken from the context by default) it opens its own
+  // context with `alpha: false`, and a transparent `background` turns opaque.
   const renderTask = page.render({
-    canvasContext: context,
+    canvas: null,
+    canvasContext: context as CanvasRenderingContext2D,
     viewport,
+    // Any canvas fillStyle. "rgba(0,0,0,0)" keeps the page transparent.
     background: opt.background || "rgb(255,255,255)",
     intent: opt.intent || "display",
   });
 
   await renderTask.promise;
+  page.cleanup();
 
   const mime = opt.imgType === "jpg" ? "image/jpeg" : "image/png";
-  const dataUrl = canvas.toDataURL(mime);
-
-  return dataUrl;
+  return canvas.toDataURL(mime);
 }
