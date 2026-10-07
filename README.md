@@ -23,10 +23,10 @@ It supports both **Node.js** and **browser environments**, making it ideal for a
 npm install pdftoimg-js
 ```
 
-Node 20.16 or newer (22.3 or newer on the 22 line). In Node the pages are drawn
-with [`@napi-rs/canvas`](https://github.com/Brooooooklyn/canvas), a prebuilt
-native canvas that needs no system libraries; it is an optional dependency of
-both this package and `pdfjs-dist`, so a normal install brings it along.
+Node 22.13 or newer. In Node the pages are drawn with
+[`@napi-rs/canvas`](https://github.com/Brooooooklyn/canvas), a prebuilt native
+canvas that needs no system libraries; it is an optional dependency of both this
+package and `pdfjs-dist`, so a normal install brings it along.
 
 In Node, pages are rasterised one after another and encoded in parallel. pdf.js
 has no real worker there, so rendering pages concurrently only interleaves them
@@ -118,6 +118,8 @@ interface Options {
 
 - Auto-detects browser environment.
 - Uses **Canvas API** for rendering pages.
+- Supports what pdf.js 6's legacy build supports: Chrome 125+, Safari 18+ and
+  Firefox ESR. Older browsers may partly work but are not supported.
 - Returns a **base64 data URL** for each page, or a `PageImage` with
   `returnType: "bytes"` (encoded through `canvas.toBlob`).
 
@@ -195,7 +197,7 @@ Convex only treats a package as external when it finds it in your app's own
 `package.json` and `node_modules`, so add both to the app too:
 
 ```bash
-pnpm add pdfjs-dist@5.4.449 @napi-rs/canvas
+pnpm add pdfjs-dist@6.4.299 @napi-rs/canvas
 ```
 
 ```ts

@@ -41,17 +41,24 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     ...requiredOpt.documentOptions,
   });
 
-  const pdfDoc = await pdfDocLoading.promise;
+  try {
+    const pdfDoc = await pdfDocLoading.promise;
 
-  const numPages = pdfDoc.numPages;
+    const numPages = pdfDoc.numPages;
 
-  const pageNums: number[] = getPagesArray(requiredOpt.pages, numPages);
+    const pageNums: number[] = getPagesArray(requiredOpt.pages, numPages);
 
-  const images = await Promise.all(
-    pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
-  );
+    const images = await Promise.all(
+      pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
+    );
 
-  return returnsSinglePage(requiredOpt.pages) ? images[0] : images;
+    return returnsSinglePage(requiredOpt.pages) ? images[0] : images;
+  } finally {
+    // Each document gets its own Web Worker, which outlives the render until
+    // the loading task is destroyed: an app that renders on every edit would
+    // otherwise pile up one worker per call.
+    await pdfDocLoading.destroy();
+  }
 }
 
 async function pageToImg(
@@ -81,8 +88,9 @@ async function pageToImg(
   canvas.height = viewport.height;
   canvas.width = viewport.width;
 
-  // `canvas: null` makes pdf.js 5 draw into this context as given instead of
-  // opening its own opaque one, so a transparent `background` survives.
+  // `canvas: null` makes pdf.js (5 and later) draw into this context as given
+  // instead of opening its own opaque one, so a transparent `background`
+  // survives.
   const renderTask = page.render({
     canvas: null,
     canvasContext,

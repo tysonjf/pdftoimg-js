@@ -56,7 +56,7 @@
     "url": "https://github.com/tysonjf/pdftoimg-js/issues"
   },
   "engines": {
-    "node": ">=20.16.0 || >=22.3.0"
+    "node": ">=22.13.0"
   },
   "files": [
     "dist/**/*",
@@ -78,9 +78,9 @@
   },
   "dependencies": {
     "commander": "^13.1.0",
-    "pdfjs-dist": "5.4.449"
+    "pdfjs-dist": "6.4.299"
   },
   "optionalDependencies": {
-    "@napi-rs/canvas": "^0.1.81"
+    "@napi-rs/canvas": "^1.0.10"
   }
 }
