@@ -91,6 +91,18 @@ export interface Options {
    * @default false
    */
   scaleForBrowserSupport?: boolean;
+
+  /**
+   * Browser only: the URL pdf.js loads its worker from. It has to be the
+   * worker of the exact pdf.js version this package runs, which this package
+   * ships as `pdftoimg-js/worker`; with Vite, pass
+   * `import workerSrc from "pdftoimg-js/worker?url"`. Without it, a
+   * `GlobalWorkerOptions.workerSrc` already set on this package's pdf.js is
+   * kept, and otherwise the worker comes from cdnjs. Ignored in Node, where
+   * the worker runs in-process.
+   * @default null
+   */
+  workerSrc?: string | URL | null;
 }
 
 type PageResult<O extends Options> = O["returnType"] extends "bytes"

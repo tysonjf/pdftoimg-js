@@ -11,6 +11,7 @@ export const defaultOptions: Required<Options> = {
   maxWidth: null,
   maxHeight: null,
   scaleForBrowserSupport: false,
+  workerSrc: null,
 };
 
 export const rangeToArr = (start: number, end?: number): number[] => {
@@ -91,4 +92,22 @@ export function toDocumentSource(
     };
   }
   return { url: src };
+}
+
+/**
+ * The worker URL the browser entry gives pdf.js: the caller's, else one the
+ * host app already set on this pdf.js, else the matching version on cdnjs.
+ */
+export function workerSrcFor(
+  option: string | URL | null,
+  current: string,
+  version: string,
+): string {
+  if (option) {
+    return String(option);
+  }
+  return (
+    current ||
+    `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${version}/pdf.worker.min.mjs`
+  );
 }

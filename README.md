@@ -110,6 +110,7 @@ interface Options {
   maxWidth?: number | null; // Default: null
   maxHeight?: number | null; // Default: null
   scaleForBrowserSupport?: boolean; // Default: false
+  workerSrc?: string | URL | null; // Browser only. Default: null (see below)
 }
 ```
 
@@ -117,17 +118,34 @@ interface Options {
 
 - Auto-detects browser environment.
 - Uses **Canvas API** for rendering pages.
-- Points pdf.js at the matching worker on cdnjs, unless your app has already set
-  `GlobalWorkerOptions.workerSrc` (for a self-hosted worker, for example):
-  ```ts
-  pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  ```
-  Setting `workerSrc` yourself, to a `pdf.worker.min.mjs` you serve from the
-  same `pdfjs-dist` version, is the reliable path. The cdnjs default works only
-  if cdnjs carries that exact version, and when it does not, the failure shows
-  up at runtime in the browser.
 - Returns a **base64 data URL** for each page, or a `PageImage` with
   `returnType: "bytes"` (encoded through `canvas.toBlob`).
+
+#### The pdf.js worker
+
+In the browser pdf.js reads the PDF in a Web Worker, loaded from its own URL,
+and the worker has to be the exact pdf.js version this package runs. The package
+ships that worker as `pdftoimg-js/worker`. Serve it from your own app and pass
+its URL as `workerSrc`. With Vite, a `?url` import copies it into the build and
+gives you the URL, so it always matches:
+
+```ts
+import { pdfToImg } from "pdftoimg-js/browser";
+import workerSrc from "pdftoimg-js/worker?url";
+
+const images = await pdfToImg(file, { workerSrc });
+```
+
+Other bundlers can do the same with their own asset-URL import, or you can copy
+`node_modules/pdftoimg-js/dist/pdf.worker.min.mjs` into your public folder. A
+hand-made copy has to be replaced whenever this package updates pdf.js, or pdf.js
+refuses it ("The API version does not match the Worker version").
+
+Without `workerSrc`, a `GlobalWorkerOptions.workerSrc` already set on this
+package's pdf.js (`pdfjs-dist/legacy/build/pdf.mjs`) is kept, and otherwise the
+worker is loaded from cdnjs for the matching version. That works without setup,
+but every first render then waits on cdnjs, and fails if cdnjs is down or blocked
+by a firewall, an ad blocker or a Content Security Policy.
 
 ### Transparent background
 
