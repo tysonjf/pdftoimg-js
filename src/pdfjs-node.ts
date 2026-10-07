@@ -27,11 +27,11 @@ export function loadPdfjs(): Promise<PdfjsLib> {
     ([lib]) => lib,
     (error) => {
       pdfjs = undefined;
-      // pdf.js 5.4 only warns here when @napi-rs/canvas is missing ("Cannot
-      // polyfill `DOMMatrix`"); the missing canvas surfaces later, from the
-      // canvas factory in renderPage. This is a safety net for anything else
-      // that stops pdf.js or its worker from evaluating, such as a pdf.js
-      // that touches DOMMatrix at import time.
+      // pdf.js (5.4 through 6.4) only warns here when @napi-rs/canvas is
+      // missing ("Cannot polyfill `DOMMatrix`"); the missing canvas surfaces
+      // later, from the canvas factory in renderPage. This is a safety net
+      // for anything else that stops pdf.js or its worker from evaluating,
+      // such as a pdf.js that touches DOMMatrix at import time.
       throw describeCanvasFailure(error);
     },
   );

@@ -42,10 +42,9 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     ...requiredOpt.documentOptions,
   });
 
-  const pdfDoc = await pdfDocLoading.promise;
-
   const encoding: Promise<PageImage>[] = [];
   try {
+    const pdfDoc = await pdfDocLoading.promise;
     const pageNums: number[] = getPagesArray(
       requiredOpt.pages,
       pdfDoc.numPages,
@@ -76,8 +75,9 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     // encode failed) finish before the document goes away under them.
     await Promise.allSettled(encoding);
     // A long-lived process (a serverless function instance, for one) would
-    // otherwise keep every document it ever rendered.
-    await pdfDoc.destroy();
+    // otherwise keep every document it ever rendered. The loading task owns
+    // the document and its worker, and is also what a failed load leaves.
+    await pdfDocLoading.destroy();
   }
 }
 
@@ -143,9 +143,10 @@ async function renderPage(
     throw describeCanvasFailure(error);
   }
 
-  // `canvas: null` tells pdf.js 5 to draw into the context as given. With a
-  // canvas (passed, or taken from the context by default) it opens its own
-  // context with `alpha: false`, and a transparent `background` turns opaque.
+  // `canvas: null` tells pdf.js (5 and later) to draw into the context as
+  // given. With a canvas (passed, or taken from the context by default) it
+  // opens its own context with `alpha: false`, and a transparent `background`
+  // turns opaque.
   const renderTask = page.render({
     canvas: null,
     canvasContext: canvasAndContext.context as CanvasRenderingContext2D,

@@ -50,7 +50,7 @@ Before you start, please read through the following guidelines to help keep the 
 
 ## 🛠 Development Setup
 
-Ensure you have [Node.js](https://nodejs.org/) 20.16 or newer and [pnpm](https://pnpm.io) installed globally.
+Ensure you have [Node.js](https://nodejs.org/) 22.13 or newer and [pnpm](https://pnpm.io) installed globally.
 
 Clone the repository and install dependencies:
 
