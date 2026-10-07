@@ -1,6 +1,14 @@
 import { PDFDocumentProxy } from "pdfjs-dist/types/src/display/api";
-import { Options, PdfSrc, ReturnType } from "./types";
-import { defaultOptions, getPagesArray, isTypedArrayStrict } from "./utils";
+import { Options, PageImage, PdfSrc, ReturnType } from "./types";
+import {
+  defaultOptions,
+  getPagesArray,
+  mimeFor,
+  returnsSinglePage,
+  toDocumentSource,
+} from "./utils";
+
+export type { PageImage } from "./types";
 
 export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
   src: S,
@@ -17,18 +25,14 @@ export function pdfToImg<O extends Options, S extends PdfSrc | PdfSrc[]>(
 export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
-  const ua = navigator.userAgent;
-  const isChrome =
-    ua.includes("chrome") || ua.includes("Chromium") || ua.includes("Chrome");
-
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
+  // The worker must match the pdf.js version exactly. Leave it alone when the
+  // host app already pointed pdf.js at its own copy.
+  pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
   const requiredOpt: Required<Options> = { ...defaultOptions, ...opt };
 
   const pdfDocLoading = pdfjsLib.getDocument({
-    ...(isTypedArrayStrict(src) ? { data: src } : { url: src }),
-    isChrome,
+    ...toDocumentSource(src),
     ...requiredOpt.documentOptions,
   });
 
@@ -42,18 +46,14 @@ export async function singlePdfToImg(src: PdfSrc, opt: Partial<Options> = {}) {
     pageNums.map((n) => pageToImg(pdfDoc, n, requiredOpt)),
   );
 
-  return requiredOpt.pages === "firstPage" ||
-    requiredOpt.pages === "lastPage" ||
-    typeof requiredOpt.pages === "number"
-    ? images[0]
-    : images;
+  return returnsSinglePage(requiredOpt.pages) ? images[0] : images;
 }
 
 async function pageToImg(
   pdfDoc: PDFDocumentProxy,
   pageNum: number,
   opt: Required<Options>,
-): Promise<string | Buffer> {
+): Promise<string | PageImage> {
   const page = await pdfDoc.getPage(pageNum);
   let scale = opt.scale;
   let viewport = page.getViewport({ scale });
@@ -76,7 +76,10 @@ async function pageToImg(
   canvas.height = viewport.height;
   canvas.width = viewport.width;
 
+  // `canvas: null` makes pdf.js 5 draw into this context as given instead of
+  // opening its own opaque one, so a transparent `background` survives.
   const renderTask = page.render({
+    canvas: null,
     canvasContext,
     viewport,
     intent: opt.intent || "display",
@@ -85,8 +88,21 @@ async function pageToImg(
 
   await renderTask.promise;
 
-  const mime = opt.imgType === "jpg" ? "image/jpeg" : "image/png";
-  const dataUrl = canvas.toDataURL(mime);
-
-  return dataUrl;
+  const mime = mimeFor(opt.imgType);
+  if (opt.returnType === "bytes") {
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, mime),
+    );
+    if (!blob) {
+      throw new Error(`canvas.toBlob produced nothing for page ${pageNum}`);
+    }
+    return {
+      pageNumber: pageNum,
+      width: canvas.width,
+      height: canvas.height,
+      mime,
+      bytes: new Uint8Array(await blob.arrayBuffer()),
+    };
+  }
+  return canvas.toDataURL(mime);
 }

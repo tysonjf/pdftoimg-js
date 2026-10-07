@@ -1,6 +1,6 @@
 > **Version 2 Has Arrived! 🎉**  
 > This release is still in beta, so we welcome your feedback and feature requests.  
-> If you encounter any bugs, please report them by opening an issue on our [GitHub repository](https://github.com/iqbal-rashed/pdftoimg-js/issues).
+> If you encounter any bugs, please report them by opening an issue on our [GitHub repository](https://github.com/tysonjf/pdftoimg-js/issues).
 
 # PDFtoIMG-JS
 
@@ -22,6 +22,17 @@ It supports both **Node.js** and **browser environments**, making it ideal for a
 ```bash
 npm install pdftoimg-js
 ```
+
+Node 20.16 or newer (22.3 or newer on the 22 line). In Node the pages are drawn
+with [`@napi-rs/canvas`](https://github.com/Brooooooklyn/canvas), a prebuilt
+native canvas that needs no system libraries; it is an optional dependency of
+both this package and `pdfjs-dist`, so a normal install brings it along.
+
+In Node, pages are rasterised one after another and encoded in parallel. pdf.js
+has no real worker there, so rendering pages concurrently only interleaves them
+and raises peak memory (14 A4 pages: 3.8 s concurrent, 3.1 s sequential), while
+`@napi-rs/canvas` encodes PNG and JPEG on a separate thread, so each page's
+encode starts as soon as it is drawn.
 
 ## 🛠 Basic Usage
 
@@ -71,22 +82,27 @@ fileInput.addEventListener("change", async (e) => {
 
 Convert PDF(s) to images.
 
-| Parameter | Type                                        | Description                     |
-| :-------- | :------------------------------------------ | :------------------------------ |
-| `src`     | `string, URL, Uint8Array, or Array of Each` | PDF file(s) input source.       |
-| `options` | `Partial<Options>`                          | (Optional) Conversion settings. |
+| Parameter | Type                                                             | Description                                                                                 |
+| :-------- | :--------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
+| `src`     | `string, URL, Uint8Array, Buffer, ArrayBuffer, or Array of Each` | PDF file(s) input source. Bytes are copied first, so the same buffer can be rendered again. |
+| `options` | `Partial<Options>`                                               | (Optional) Conversion settings.                                                             |
 
 ✅ **Returns**:
 
 - If `pages` is a single page (`firstPage`, `lastPage`, or a number) ➔ Single image.
 - Otherwise ➔ Array of images.
+- Each image is a base64 data URL, or with `returnType: "bytes"` a `PageImage`:
+  `{ pageNumber, width, height, mime, bytes }` with the encoded PNG or JPEG as a
+  `Uint8Array`. Use it when the image goes to a file or a store; it skips the
+  base64 round trip and tells you the pixel size without decoding.
 
 ### Options (`Options` Interface)
 
 ```ts
 interface Options {
   imgType?: "png" | "jpg"; // Default: "png"
-  scale?: number; // Default: 1.5
+  returnType?: "base64" | "bytes"; // Default: "base64" (a data URL)
+  scale?: number; // Default: 1
   background?: string | CanvasGradient | CanvasPattern; // Default: "rgb(255,255,255)"
   intent?: "display" | "print" | "any"; // Default: "display"
   pages?: PagesType; // "all" | "firstPage" | "lastPage" | number | number[] | { startPage, endPage }
@@ -101,12 +117,111 @@ interface Options {
 
 - Auto-detects browser environment.
 - Uses **Canvas API** for rendering pages.
-- Sets **worker** dynamically from CDN:
+- Points pdf.js at the matching worker on cdnjs, unless your app has already set
+  `GlobalWorkerOptions.workerSrc` (for a self-hosted worker, for example):
   ```ts
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "//cdnjs.cloudflare.com/ajax/libs/pdf.js/4.8.69/pdf.worker.min.mjs";
+  pdfjsLib.GlobalWorkerOptions.workerSrc ||= `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
   ```
-- Returns **base64 DataURL** for each page.
+  Setting `workerSrc` yourself, to a `pdf.worker.min.mjs` you serve from the
+  same `pdfjs-dist` version, is the reliable path. The cdnjs default works only
+  if cdnjs carries that exact version, and when it does not, the failure shows
+  up at runtime in the browser.
+- Returns a **base64 data URL** for each page, or a `PageImage` with
+  `returnType: "bytes"` (encoded through `canvas.toBlob`).
+
+### Transparent background
+
+`background` takes any canvas fill style. `"rgba(0,0,0,0)"` (or `"transparent"`)
+leaves everything the PDF does not paint transparent. Only PNG can keep that; a
+JPG is always opaque.
+
+```ts
+const png = await pdfToImg(bytes, { pages: 1, background: "rgba(0,0,0,0)" });
+```
+
+### Bundlers, and Convex "use node" actions
+
+pdf.js assumes it runs straight out of `node_modules`. Node has no Web Worker,
+so pdf.js imports `./pdf.worker.mjs` relative to its own file the first time a
+document loads, and it reads its standard fonts, CMaps, WASM decoders and ICC
+profiles from disk. Both break once a bundler folds `pdfjs-dist` into a single
+file: the worker import fails with "Setting up fake worker failed", and the
+font paths point nowhere.
+
+This package handles both. It imports the worker module itself, so a bundler
+carries it along and pdf.js finds it on `globalThis.pdfjsWorker` without
+touching the file system. And it resolves the asset directories from wherever
+`pdfjs-dist` is installed (first relative to its own file, which inside a
+bundle is the bundle, then relative to the working directory) instead of
+hard-coding `node_modules/pdfjs-dist` under `process.cwd()`. When `pdfjs-dist`
+is not on disk at all, PDFs with embedded fonts still render; pdf.js warns once
+for each non-embedded standard font it cannot load. `pdfjsDistDir()` is exported
+so you can check what was found.
+
+[Convex](https://docs.convex.dev/functions/runtimes#nodejs-runtime) bundles
+`"use node"` actions with esbuild and installs on the server only the packages
+listed in `convex.json` under `node.externalPackages`. A native module can never
+be bundled, and pdf.js is better kept out of the bundle so its fonts are on
+disk, so list both:
+
+```json
+{
+  "node": {
+    "externalPackages": ["pdfjs-dist", "@napi-rs/canvas"],
+    "nodeVersion": "22"
+  }
+}
+```
+
+Convex only treats a package as external when it finds it in your app's own
+`package.json` and `node_modules`, so add both to the app too:
+
+```bash
+pnpm add pdfjs-dist@5.4.449 @napi-rs/canvas
+```
+
+```ts
+// convex/rasterise.ts
+"use node";
+import { v } from "convex/values";
+import { action } from "./_generated/server";
+// Convex externalises a package only where the app imports it directly. With
+// pnpm's default isolated node_modules the imports inside pdftoimg-js resolve
+// to a different path and get bundled instead, so these two lines are what make
+// Convex install the canvas and pdf.js on the server. With npm, or pnpm's
+// node-linker=hoisted, they are not needed and do no harm.
+import "@napi-rs/canvas";
+import "pdfjs-dist/legacy/build/pdf.mjs";
+import { pdfToImg } from "pdftoimg-js";
+
+export const rasterise = action({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, { storageId }) => {
+    const blob = await ctx.storage.get(storageId);
+    if (!blob) throw new Error("PDF not found");
+    const image = await pdfToImg(await blob.arrayBuffer(), {
+      pages: "firstPage",
+      scale: 2,
+      background: "rgba(0,0,0,0)",
+      returnType: "bytes",
+    });
+    return await ctx.storage.store(
+      new Blob([image.bytes], { type: image.mime }),
+    );
+  },
+});
+```
+
+With pnpm the bundle still carries its own copy of pdf.js; the external one
+supplies the fonts and the canvas. If `@napi-rs/canvas` is missing where the
+bundle runs, the error says so and names `externalPackages`.
+
+Any other bundler that targets Node needs the same two things: keep
+`@napi-rs/canvas` external (it is a `.node` binary) and either keep `pdfjs-dist`
+external or accept that non-embedded fonts fall back. `tests/convex-bundle.test.ts`
+builds the package with esbuild using Convex's own options and runs the result
+from an unrelated working directory, with only the packages placed beside the
+bundle to resolve from, in both configurations.
 
 ## 👡 CLI Usage (Node.js Only)
 
@@ -123,7 +238,7 @@ pdftoimg -i <input> [-o <output>] [-t <imgType>] [-s <scale>] [-p <pages>] [-n <
 | `-i, --input`                   | `string`  | (Required) Input PDF path.                                                 |
 | `-o, --out`                     | `string`  | Output directory (default: current directory).                             |
 | `-t, --imgType`                 | `string`  | `png` or `jpg` (default: png).                                             |
-| `-s, --scale`                   | `number`  | Scale factor (default: 1.5).                                               |
+| `-s, --scale`                   | `number`  | Scale factor (default: 1).                                                 |
 | `-b, --background`              | `string`  | Background color (e.g., 'white', 'rgba(255,255,255,0.5)', '#ffffff').      |
 | `-in, --intent`                 | `string`  | Rendering intent: 'display', 'print', or 'any' (default: 'display').       |
 | `-p, --pages`                   | `string`  | `"all"`, `"firstPage"`, `"lastPage"`, page numbers, or ranges like `1..3`. |
@@ -179,4 +294,4 @@ pdftoimg -i ./example.pdf -sb true
 
 ## Contribution
 
-Contributions are welcome! Feel free to check out the [Contributing Guide](https://github.com/iqbal-rashed/pdftoimg-js/blob/main/.github/contributing.md) before making a pull request.
+Contributions are welcome! Feel free to check out the [Contributing Guide](https://github.com/tysonjf/pdftoimg-js/blob/main/.github/contributing.md) before making a pull request.

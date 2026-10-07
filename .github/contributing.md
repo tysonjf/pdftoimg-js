@@ -38,40 +38,40 @@ Before you start, please read through the following guidelines to help keep the 
   - Use the existing ESLint and Prettier rules.
   - Before submitting, run:
     ```bash
-    yarn lint
-    yarn format
+    pnpm lint
+    pnpm format
     ```
 
 - **Testing:**
   - Make sure your changes pass existing tests.
-  - If needed, add new tests in the `test/` directory.
+  - If needed, add new tests in the `tests/` directory (Vitest).
 
 ---
 
 ## 🛠 Development Setup
 
-Ensure you have [Node.js](https://nodejs.org/) (preferably LTS) and [Yarn](https://yarnpkg.com) installed globally.
+Ensure you have [Node.js](https://nodejs.org/) 20.16 or newer and [pnpm](https://pnpm.io) installed globally.
 
 Clone the repository and install dependencies:
 
 ```bash
-$ git clone https://github.com/iqbal-rashed/pdftoimg-js.git
-$ cd pdfToImg-js
-$ yarn install
+$ git clone https://github.com/tysonjf/pdftoimg-js.git
+$ cd pdftoimg-js
+$ pnpm install
 ```
 
 ---
 
 ### Useful Commands
 
-| Command        | Purpose                                                 |
-| :------------- | :------------------------------------------------------ |
-| `yarn dev`     | Run development mode with hot-reloading.                |
-| `yarn build`   | Build production-ready files into `dist/`.              |
-| `yarn lint`    | Lint the source code.                                   |
-| `yarn format`  | Format source code with Prettier.                       |
-| `yarn test`    | Run unit tests with Jest.                               |
-| `yarn example` | Run an example script located in `/example/example.ts`. |
+| Command          | Purpose                                                         |
+| :--------------- | :-------------------------------------------------------------- |
+| `pnpm build`     | Build production-ready files into `dist/`.                      |
+| `pnpm typecheck` | Type-check `src/` and `tests/` without emitting.                |
+| `pnpm lint`      | Lint the source code.                                           |
+| `pnpm format`    | Format source code with Prettier.                               |
+| `pnpm test`      | Run the Vitest suite, including the Convex-style bundling test. |
+| `pnpm example`   | Run an example script located in `/example/example.ts`.         |
 
 ---
 
@@ -81,23 +81,25 @@ $ yarn install
 /dist            # Built output
 /example         # Example usage and sample PDFs
 /src
-  /browser       # Browser-specific module
+  browser.ts     # Browser entrypoint (HTML5 canvas)
   cli.ts         # CLI entrypoint
-  constant.ts    # Constants
-  index.ts       # Main library entrypoint
+  index.ts       # Node entrypoint
+  pdfjs-node.ts  # Loads pdf.js for Node: worker registration, asset paths
   prompts.ts     # CLI prompts
   types.ts       # Shared TypeScript types
   utils.ts       # Utility functions
   validators.ts  # Validators for CLI options
+/tests           # Vitest suite and fixtures
 .gitignore
 .prettierrc
 eslint.config.mjs
 LICENSE
 package.json
+pnpm-lock.yaml
 readme.md
 tsconfig.json
 tsup.config.ts
-yarn.lock
+vitest.config.mts
 ```
 
 ---
