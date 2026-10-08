@@ -161,8 +161,27 @@ refuses it ("The API version does not match the Worker version").
 Without `workerSrc`, a `GlobalWorkerOptions.workerSrc` already set on this
 package's pdf.js (`pdfjs-dist/legacy/build/pdf.mjs`) is kept, and otherwise the
 worker is loaded from cdnjs for the matching version. That works without setup,
-but every first render then waits on cdnjs, and fails if cdnjs is down or blocked
+but the first render then waits on cdnjs, and fails if cdnjs is down or blocked
 by a firewall, an ad blocker or a Content Security Policy.
+
+The worker is started by the first call and shared by every call after it, for
+the life of the page: starting one takes longer than rendering a page does
+(about 90 ms in Chromium before the worker script has even been fetched). To
+take that out of the first render as well, start it early:
+
+```ts
+import { pdfToImg, preloadWorker } from "pdftoimg-js/browser";
+import workerSrc from "pdftoimg-js/worker?url";
+
+preloadWorker(workerSrc); // on page load, or when a render becomes likely
+// later
+const image = await pdfToImg(file, { pages: 1, scale: 2, workerSrc });
+```
+
+A page whose `background` is opaque (the default white is) is drawn on a canvas
+without an alpha channel, which the browser draws and encodes faster and writes
+as a smaller PNG. A `background` that may leave the page see-through, such as
+`"rgba(0,0,0,0)"`, keeps the channel.
 
 ### Transparent background
 

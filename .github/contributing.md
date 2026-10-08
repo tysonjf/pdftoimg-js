@@ -70,9 +70,10 @@ $ pnpm install
 | `pnpm typecheck` | Type-check `src/` and `tests/` without emitting.                |
 | `pnpm lint`      | Lint the source code.                                           |
 | `pnpm format`    | Format source code with Prettier.                               |
-| `pnpm test`      | Run the Vitest suite, including the Convex-style bundling test. |
+| `pnpm test`      | Run the Vitest suite: Node, the Convex-style bundle, and the browser entry in Playwright's Chromium (`pnpm exec playwright install chromium` once). |
 | `pnpm example`   | Run an example script located in `/example/example.ts`.         |
 | `pnpm bench`     | Time `example/example.pdf` through `dist/` (build first).       |
+| `pnpm bench:browser` | Time the browser entry in headless Chromium (needs Playwright). |
 
 ---
 
