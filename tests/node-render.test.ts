@@ -186,14 +186,17 @@ describe("pdfToImg in Node", () => {
   it("rejects, instead of crashing the process, when a page fails to encode", async () => {
     const { createCanvas } = await import("@napi-rs/canvas");
     type Made = { canvas: ReturnType<typeof createCanvas> };
-    // pdf.js's canvas factory contract, with canvases whose encode fails at
-    // once: page 1's encode rejects while page 2 is still rendering.
+    // pdf.js's canvas factory contract, with canvases whose pixels cannot be
+    // read: page 1's encode rejects while page 2 is still rendering. (The
+    // factory is a class, so these pages all render on the calling thread.)
     class FailingEncodeFactory {
       create(width: number, height: number) {
         const canvas = createCanvas(width, height);
-        (canvas as { encode: unknown }).encode = () =>
-          Promise.reject(new Error("encode failed"));
-        return { canvas, context: canvas.getContext("2d") };
+        const context = canvas.getContext("2d");
+        (context as { getImageData: unknown }).getImageData = () => {
+          throw new Error("encode failed");
+        };
+        return { canvas, context };
       }
       reset({ canvas }: Made, width: number, height: number) {
         canvas.width = width;

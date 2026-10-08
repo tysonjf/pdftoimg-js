@@ -28,6 +28,7 @@
     "lint": "eslint",
     "format": "prettier --ignore-path .gitignore --write \"./src/**/*.+(js|ts|json)\"",
     "example": "tsx example/example.ts",
+    "bench": "node scripts/bench.mjs",
     "prepare": "husky"
   },
   "keywords": [

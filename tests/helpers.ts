@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const require = createRequire(import.meta.url);
 
@@ -86,4 +87,34 @@ export function installedOptionalDependencies(
       return [];
     }
   });
+}
+
+/**
+ * Builds src/render-worker.ts the way `pnpm build` does, for tests that run
+ * from src/ and would otherwise find no worker file next to src/pool.ts.
+ * The bundle lands under node_modules/.cache so its imports of pdfjs-dist
+ * resolve from this package's node_modules.
+ */
+export async function buildRenderWorker(): Promise<URL> {
+  const { build } = await import("esbuild");
+  const outfile = join(
+    installedPackageDir("pdfjs-dist"),
+    "..",
+    ".cache",
+    "pdftoimg-js",
+    "render-worker.test.mjs",
+  );
+  await build({
+    entryPoints: [
+      fileURLToPath(new URL("../src/render-worker.ts", import.meta.url)),
+    ],
+    bundle: true,
+    packages: "external",
+    platform: "node",
+    format: "esm",
+    target: "node22",
+    outfile,
+    logLevel: "silent",
+  });
+  return pathToFileURL(outfile);
 }

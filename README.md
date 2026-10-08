@@ -28,11 +28,25 @@ Node 22.13 or newer. In Node the pages are drawn with
 canvas that needs no system libraries; it is an optional dependency of both this
 package and `pdfjs-dist`, so a normal install brings it along.
 
-In Node, pages are rasterised one after another and encoded in parallel. pdf.js
-has no real worker there, so rendering pages concurrently only interleaves them
-and raises peak memory (14 A4 pages: 3.8 s concurrent, 3.1 s sequential), while
-`@napi-rs/canvas` encodes PNG and JPEG on a separate thread, so each page's
-encode starts as soon as it is drawn.
+### Speed in Node
+
+pdf.js in Node parses and draws on the thread that opened the document, so a
+document's pages are rendered one after another there. For more than one page,
+this package also renders on worker threads: each runs its own pdf.js and
+canvas, opens the document itself, and takes pages from the same queue as the
+calling thread. The threads start on first use, serve every call in the
+process, and stop after 30 s idle. The default is one per CPU beyond the
+first, at most 4; `threads` sets another number, and `threads: 0` keeps
+everything on the calling thread. PNGs are written by the package's own
+encoder (zlib at level 1), which takes a third of the time of the canvas's
+encoder and writes smaller files. `pnpm build && node scripts/bench.mjs` times
+`example/example.pdf` on your machine.
+
+The worker threads need the worker file that `pnpm build` puts next to the
+package's entry point. A bundler that folds the package into one file leaves it
+behind, and the pages then render on the calling thread, as they do when
+`documentOptions` or `background` hold something that cannot be sent to another
+thread (a class or a native object).
 
 ## 🛠 Basic Usage
 
@@ -111,6 +125,7 @@ interface Options {
   maxHeight?: number | null; // Default: null
   scaleForBrowserSupport?: boolean; // Default: false
   workerSrc?: string | URL | null; // Browser only. Default: null (see below)
+  threads?: number | null; // Node only. Default: null (one per CPU beyond the first, at most 4)
 }
 ```
 

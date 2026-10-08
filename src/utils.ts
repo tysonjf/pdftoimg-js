@@ -12,6 +12,7 @@ export const defaultOptions: Required<Options> = {
   maxHeight: null,
   scaleForBrowserSupport: false,
   workerSrc: null,
+  threads: null,
 };
 
 export const rangeToArr = (start: number, end?: number): number[] => {
