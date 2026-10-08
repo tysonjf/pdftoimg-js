@@ -103,6 +103,20 @@ export interface Options {
    * @default null
    */
   workerSrc?: string | URL | null;
+
+  /**
+   * Node only: how many worker threads render pages alongside the calling
+   * thread. Each worker runs its own pdf.js and canvas and takes pages from
+   * the same queue, so a multi-page document renders on several CPUs at once.
+   * Workers start on first use, serve every call in the process, and stop
+   * after 30 s idle. 0 renders everything on the calling thread. The default
+   * is one worker per CPU beyond the first, at most 4. Ignored in the browser,
+   * and in Node when the package is bundled into a single file (the worker
+   * file is then not next to it) or when `documentOptions` or `background`
+   * hold values that cannot be sent to another thread, such as a class.
+   * @default null
+   */
+  threads?: number | null;
 }
 
 type PageResult<O extends Options> = O["returnType"] extends "bytes"

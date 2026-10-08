@@ -28,11 +28,25 @@ Node 22.13 or newer. In Node the pages are drawn with
 canvas that needs no system libraries; it is an optional dependency of both this
 package and `pdfjs-dist`, so a normal install brings it along.
 
-In Node, pages are rasterised one after another and encoded in parallel. pdf.js
-has no real worker there, so rendering pages concurrently only interleaves them
-and raises peak memory (14 A4 pages: 3.8 s concurrent, 3.1 s sequential), while
-`@napi-rs/canvas` encodes PNG and JPEG on a separate thread, so each page's
-encode starts as soon as it is drawn.
+### Speed in Node
+
+pdf.js in Node parses and draws on the thread that opened the document, so a
+document's pages are rendered one after another there. For more than one page,
+this package also renders on worker threads: each runs its own pdf.js and
+canvas, opens the document itself, and takes pages from the same queue as the
+calling thread. The threads start on first use, serve every call in the
+process, and stop after 30 s idle. The default is one per CPU beyond the
+first, at most 4; `threads` sets another number, and `threads: 0` keeps
+everything on the calling thread. PNGs are written by the package's own
+encoder (zlib at level 1), which takes a third of the time of the canvas's
+encoder and writes smaller files. `pnpm build && node scripts/bench.mjs` times
+`example/example.pdf` on your machine.
+
+The worker threads need the worker file that `pnpm build` puts next to the
+package's entry point. A bundler that folds the package into one file leaves it
+behind, and the pages then render on the calling thread, as they do when
+`documentOptions` or `background` hold something that cannot be sent to another
+thread (a class or a native object).
 
 ## 🛠 Basic Usage
 
@@ -111,6 +125,7 @@ interface Options {
   maxHeight?: number | null; // Default: null
   scaleForBrowserSupport?: boolean; // Default: false
   workerSrc?: string | URL | null; // Browser only. Default: null (see below)
+  threads?: number | null; // Node only. Default: null (one per CPU beyond the first, at most 4)
 }
 ```
 
@@ -146,8 +161,27 @@ refuses it ("The API version does not match the Worker version").
 Without `workerSrc`, a `GlobalWorkerOptions.workerSrc` already set on this
 package's pdf.js (`pdfjs-dist/legacy/build/pdf.mjs`) is kept, and otherwise the
 worker is loaded from cdnjs for the matching version. That works without setup,
-but every first render then waits on cdnjs, and fails if cdnjs is down or blocked
+but the first render then waits on cdnjs, and fails if cdnjs is down or blocked
 by a firewall, an ad blocker or a Content Security Policy.
+
+The worker is started by the first call and shared by every call after it, for
+the life of the page: starting one takes longer than rendering a page does
+(about 90 ms in Chromium before the worker script has even been fetched). To
+take that out of the first render as well, start it early:
+
+```ts
+import { pdfToImg, preloadWorker } from "pdftoimg-js/browser";
+import workerSrc from "pdftoimg-js/worker?url";
+
+preloadWorker(workerSrc); // on page load, or when a render becomes likely
+// later
+const image = await pdfToImg(file, { pages: 1, scale: 2, workerSrc });
+```
+
+A page whose `background` is opaque (the default white is) is drawn on a canvas
+without an alpha channel, which the browser draws and encodes faster and writes
+as a smaller PNG. A `background` that may leave the page see-through, such as
+`"rgba(0,0,0,0)"`, keeps the channel.
 
 ### Transparent background
 

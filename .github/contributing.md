@@ -70,8 +70,10 @@ $ pnpm install
 | `pnpm typecheck` | Type-check `src/` and `tests/` without emitting.                |
 | `pnpm lint`      | Lint the source code.                                           |
 | `pnpm format`    | Format source code with Prettier.                               |
-| `pnpm test`      | Run the Vitest suite, including the Convex-style bundling test. |
+| `pnpm test`      | Run the Vitest suite: Node, the Convex-style bundle, and the browser entry in Playwright's Chromium (`pnpm exec playwright install chromium` once). |
 | `pnpm example`   | Run an example script located in `/example/example.ts`.         |
+| `pnpm bench`     | Time `example/example.pdf` through `dist/` (build first).       |
+| `pnpm bench:browser` | Time the browser entry in headless Chromium (needs Playwright). |
 
 ---
 
@@ -85,7 +87,11 @@ $ pnpm install
   cli.ts         # CLI entrypoint
   index.ts       # Node entrypoint
   pdfjs-node.ts  # Loads pdf.js for Node: worker registration, asset paths
+  png.ts         # PNG writer for the rendered pixels
+  pool.ts        # Worker-thread render pool
   prompts.ts     # CLI prompts
+  render.ts      # Draws and encodes one page; shared by the main thread and the workers
+  render-worker.ts # Worker-thread entry
   types.ts       # Shared TypeScript types
   utils.ts       # Utility functions
   validators.ts  # Validators for CLI options
